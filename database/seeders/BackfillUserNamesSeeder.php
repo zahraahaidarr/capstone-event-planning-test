@@ -9,6 +9,9 @@ class BackfillUserNamesSeeder extends Seeder
 {
     public function run(): void
     {
+        if (!Schema::hasColumn('users', 'name')) {
+            return;
+        }
         User::query()->chunkById(500, function($chunk){
             foreach ($chunk as $u) {
                 // if already filled, skip
