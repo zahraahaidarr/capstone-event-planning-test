@@ -51,7 +51,7 @@ Route::get('/register', [RegisteredUserController::class, 'create'])->name('regi
         Route::post('admin/employees', [EmployeesController::class, 'store'])->name('employees.store');
         Route::get('/admin/employees/search', [EmployeesController::class, 'search'])->name('employees.search');
         Route::get('/admin/employees/json', [EmployeesController::class, 'json'])->name('employees.json');
-        Route::post('/admin/employees/{id}/status', [EmployeesController::class, 'setStatus'])->name('set-status');
+        Route::post('/admin/employees/{id}/status', [EmployeesController::class, 'setStatus'])->name('employee.set-status');
         Route::delete('/admin/employees/{id}',      [EmployeesController::class, 'destroy'])->name('destroy');
         //volunteers routes
         Route::get('/admin/volunteers', [VolunteerController::class, 'index'])->name('volunteers.index');
