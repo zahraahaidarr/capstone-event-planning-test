@@ -6,25 +6,33 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-   public function up()
-{
-    Schema::create('announcements', function (Blueprint $table) {
-        $table->id('announcement_id');
-        $table->string('title');
-        $table->text('body');
+    public function up(): void
+    {
+        Schema::create('announcements', function (Blueprint $table) {
+            $table->bigIncrements('announcement_id');
 
-        $table->foreignId('posted_by')->nullable()
-              ->constrained('employees', 'employee_id')->nullOnDelete();
+            $table->string('title');
+            $table->text('body');
 
-        $table->string('audience')->default('ALL'); // ALL / WORKERS / EMPLOYEES / ADMINS / CUSTOM
-        $table->timestamp('created_at')->useCurrent();
-        $table->timestamp('expires_at')->nullable();
-    });
-}
+            // FK to employees.employee_id (nullable, set null on delete)
+            $table->unsignedBigInteger('posted_by')->nullable();
+            $table->foreign('posted_by')
+                  ->references('employee_id')
+                  ->on('employees')
+                  ->nullOnDelete();
 
-public function down()
-{
-    Schema::dropIfExists('announcements');
-}
+            $table->string('audience', 50)->default('ALL'); // ALL / WORKERS / EMPLOYEES / ADMINS / CUSTOM
 
+            // Use Laravel timestamps (created_at + updated_at)
+            $table->timestamps();
+
+            // Optional expiry
+            $table->timestamp('expires_at')->nullable();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('announcements');
+    }
 };
