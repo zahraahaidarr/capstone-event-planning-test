@@ -22,3 +22,6 @@ RUN sed -ri 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
     /etc/apache2/apache2.conf
 
 EXPOSE 80
+CMD php artisan migrate --force \
+ && php artisan db:seed --force \
+ && apache2-foreground
