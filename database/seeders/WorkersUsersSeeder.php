@@ -13,8 +13,7 @@ class WorkersUsersSeeder extends Seeder
     {
         DB::transaction(function () {
 
-            // ✅ 10 NEW users (role WORKER, status ACTIVE)
-            // emails must be unique in your DB.
+            // ✅ 10 worker users (emails must be unique)
             $users = [
                 ['first_name'=>'Rana',   'last_name'=>'Haddad',  'email'=>'worker101@gmail.com', 'phone'=>'70101010', 'dob'=>'2002-01-10'],
                 ['first_name'=>'Mira',   'last_name'=>'Khalil',  'email'=>'worker102@gmail.com', 'phone'=>'70101011', 'dob'=>'2001-03-22'],
@@ -28,60 +27,83 @@ class WorkersUsersSeeder extends Seeder
                 ['first_name'=>'Rami',   'last_name'=>'Nasser',  'email'=>'worker110@gmail.com', 'phone'=>'70101019', 'dob'=>'2000-02-16'],
             ];
 
-            // role_type_id must exist in role_types table ✅ (1,2,3,4,5,6,7,11)
-            // We'll mix VOLUNTEER/PAID similar to your current data.
+            /**
+             * ✅ IMPORTANT:
+             * Do NOT hardcode role_type_id (it differs between DBs).
+             * Use role_type_name and map it from DB.
+             */
             $workersProfile = [
-                ['role_type_id'=>2,  'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
-                ['role_type_id'=>5,  'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'byblos',   'hourly_rate'=>10.00],
-                ['role_type_id'=>7,  'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'beirut',   'hourly_rate'=>12.00],
-                ['role_type_id'=>6,  'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
-                ['role_type_id'=>3,  'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
-                ['role_type_id'=>1,  'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
-                ['role_type_id'=>11, 'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'nabatieh', 'hourly_rate'=>15.00],
-                ['role_type_id'=>4,  'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'beirut',   'hourly_rate'=>14.00],
-                ['role_type_id'=>2,  'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'tyre',     'hourly_rate'=>null],
-                ['role_type_id'=>5,  'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'tripoli',  'hourly_rate'=>null],
+                ['role_type_name'=>'Civil Defense', 'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
+                ['role_type_name'=>'Cleaner',       'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'byblos',   'hourly_rate'=>10.00],
+                ['role_type_name'=>'Cooking Team',  'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'beirut',   'hourly_rate'=>12.00],
+                ['role_type_name'=>'Decorator',     'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
+                ['role_type_name'=>'Media Staff',   'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
+                ['role_type_name'=>'Organizer',     'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'beirut',   'hourly_rate'=>null],
+                ['role_type_name'=>'Tech Support',  'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'nabatieh', 'hourly_rate'=>15.00],
+                ['role_type_name'=>'Tech Support',  'engagement_kind'=>'PAID',      'is_volunteer'=>0, 'location'=>'beirut',   'hourly_rate'=>14.00],
+                ['role_type_name'=>'Civil Defense', 'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'tyre',     'hourly_rate'=>null],
+                ['role_type_name'=>'Cleaner',       'engagement_kind'=>'VOLUNTEER', 'is_volunteer'=>1, 'location'=>'tripoli',  'hourly_rate'=>null],
             ];
 
-            // safety check: role_types exist
-            $roleTypeIds = array_values(array_unique(array_column($workersProfile, 'role_type_id')));
-            $existsCount = DB::table('role_types')->whereIn('role_type_id', $roleTypeIds)->count();
-            if ($existsCount !== count($roleTypeIds)) {
-                throw new \RuntimeException("Some role_type_id values do not exist in role_types table.");
+            // Map role types from DB: name => role_type_id (works in MySQL + Postgres)
+            $roleTypeMap = DB::table('role_types')->pluck('role_type_id', 'name')->toArray();
+
+            // Safety check: all role names exist
+            $neededNames = array_values(array_unique(array_column($workersProfile, 'role_type_name')));
+            $missing = array_values(array_diff($neededNames, array_keys($roleTypeMap)));
+            if (!empty($missing)) {
+                throw new \RuntimeException("Missing role types in role_types table: " . implode(', ', $missing));
             }
 
+            $now = now();
+
             foreach ($users as $idx => $u) {
-                // avoid duplicates if rerun
-                $existingUser = DB::table('users')->where('email', $u['email'])->first();
-                if ($existingUser) {
+                $wp = $workersProfile[$idx];
+                $roleTypeId = (int)$roleTypeMap[$wp['role_type_name']];
+
+                // ✅ Create or get user by email (idempotent)
+                $userRow = DB::table('users')->where('email', $u['email'])->first();
+
+                if (!$userRow) {
+                    $userId = DB::table('users')->insertGetId([
+                        'first_name'        => $u['first_name'],
+                        'last_name'         => $u['last_name'],
+                        'email'             => $u['email'],
+                        'phone'             => $u['phone'],
+                        'date_of_birth'     => $u['dob'],
+                        'avatar_path'       => null,
+                        'role'              => 'WORKER',
+                        'status'            => 'ACTIVE',
+                        'email_verified_at' => null,
+                        'password'          => Hash::make('Password@123'),
+                        'remember_token'    => null,
+                        'created_at'        => $now,
+                        'updated_at'        => $now,
+                    ]);
+                } else {
+                    $userId = (int)$userRow->id;
+                }
+
+                // ✅ Ensure worker profile exists (idempotent)
+                $existingWorker = DB::table('workers')->where('user_id', $userId)->first();
+                if ($existingWorker) {
+                    // Optional: keep it updated
+                    DB::table('workers')->where('user_id', $userId)->update([
+                        'role_type_id'    => $roleTypeId,
+                        'engagement_kind' => $wp['engagement_kind'],
+                        'is_volunteer'    => $wp['is_volunteer'],
+                        'location'        => $wp['location'],
+                        'hourly_rate'     => $wp['hourly_rate'],
+                        'updated_at'      => $now,
+                    ]);
                     continue;
                 }
 
-                $now = now();
-
-                $userId = DB::table('users')->insertGetId([
-                    'first_name'        => $u['first_name'],
-                    'last_name'         => $u['last_name'],
-                    'email'             => $u['email'],
-                    'phone'             => $u['phone'],
-                    'date_of_birth'     => $u['dob'],
-                    'avatar_path'       => null,
-                    'role'              => 'WORKER',
-                    'status'            => 'ACTIVE',
-                    'email_verified_at' => null,
-                    'password'          => Hash::make('Password@123'), // you can change
-                    'remember_token'    => null,
-                    'created_at'        => $now,
-                    'updated_at'        => $now,
-                ]);
-
-                $wp = $workersProfile[$idx];
-
                 DB::table('workers')->insert([
                     'user_id'             => $userId,
-                    'role_type_id'        => $wp['role_type_id'],
-                    'engagement_kind'     => $wp['engagement_kind'],   // VOLUNTEER / PAID
-                    'is_volunteer'        => $wp['is_volunteer'],      // 1/0
+                    'role_type_id'        => $roleTypeId,
+                    'engagement_kind'     => $wp['engagement_kind'],
+                    'is_volunteer'        => $wp['is_volunteer'],
                     'location'            => $wp['location'],
                     'certificate_path'    => null,
 

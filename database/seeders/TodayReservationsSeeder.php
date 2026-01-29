@@ -12,40 +12,16 @@ class TodayReservationsSeeder extends Seeder
     {
         DB::transaction(function () {
 
-            // -----------------------------
-            // 1) Read enum values for status (to match exact case)
-            // -----------------------------
-            $col = DB::select("SHOW COLUMNS FROM workers_reservations LIKE 'status'");
-            $type = $col[0]->Type ?? '';
-            $allowed = [];
+            // ✅ Postgres-safe statuses (you enforce them via CHECK)
+            $STATUS_RESERVED = 'RESERVED';
+            $STATUS_PENDING  = 'PENDING';
+            $STATUS_REJECTED = 'REJECTED';
 
-            if (preg_match("/^enum\((.*)\)$/i", $type, $m)) {
-                preg_match_all("/'([^']+)'/", $m[1], $mm);
-                $allowed = $mm[1] ?? [];
-            }
-
-            $statusValue = function (string $want) use ($allowed) {
-                if (empty($allowed)) return strtoupper($want);
-                foreach ($allowed as $v) {
-                    if (strtolower($v) === strtolower($want)) return $v;
-                }
-                return $allowed[0];
-            };
-
-            $STATUS_RESERVED = $statusValue('RESERVED');
-            $STATUS_PENDING  = $statusValue('PENDING');
-            $STATUS_REJECTED = $statusValue('REJECTED');
-
-            // statuses that "occupy" a spot (accepted)
-            $occupyCandidates = ['RESERVED','CHECKED_IN','CHECKED_OUT','COMPLETED','NO_SHOW'];
-            $OCCUPY = [];
-            foreach ($occupyCandidates as $c) {
-                $val = $statusValue($c);
-                if (!in_array($val, $OCCUPY, true)) $OCCUPY[] = $val;
-            }
+            // statuses that "occupy" a spot
+            $OCCUPY = ['RESERVED','CHECKED_IN','CHECKED_OUT','COMPLETED','NO_SHOW'];
 
             // -----------------------------
-            // 2) Today events only
+            // 1) Today events only
             // -----------------------------
             $today = Carbon::today()->toDateString();
 
@@ -57,7 +33,7 @@ class TodayReservationsSeeder extends Seeder
             if (empty($todayEventIds)) return;
 
             // -----------------------------
-            // 3) ACTIVE workers only (join users)
+            // 2) ACTIVE workers only (join users)
             // -----------------------------
             $activeWorkers = DB::table('workers')
                 ->join('users', 'users.id', '=', 'workers.user_id')
@@ -73,18 +49,17 @@ class TodayReservationsSeeder extends Seeder
             $allActiveWorkerIds = [];
 
             foreach ($activeWorkers as $w) {
-                $workersByRoleType[$w->role_type_id][] = (int)$w->worker_id;
+                $workersByRoleType[(int)$w->role_type_id][] = (int)$w->worker_id;
                 $allActiveWorkerIds[] = (int)$w->worker_id;
             }
 
             $now = Carbon::now();
 
             // -----------------------------
-            // 4) Seed reservations per event
+            // 3) Seed reservations per event
             // -----------------------------
             foreach ($todayEventIds as $eventId) {
 
-                // roles for this event
                 $roles = DB::table('work_roles')
                     ->where('event_id', $eventId)
                     ->select('role_id', 'role_type_id', 'required_spots')
@@ -103,11 +78,10 @@ class TodayReservationsSeeder extends Seeder
                 $used = array_fill_keys($existingWorkerIds, true);
 
                 // -----------------------------
-                // 4.A) Fill RESERVED per role up to required_spots (based on available active workers)
+                // 3.A) Fill RESERVED per role up to required_spots
                 // -----------------------------
                 foreach ($roles as $role) {
 
-                    // how many spots already occupied (accepted)
                     $occupied = DB::table('workers_reservations')
                         ->where('event_id', $eventId)
                         ->where('work_role_id', $role->role_id)
@@ -117,10 +91,10 @@ class TodayReservationsSeeder extends Seeder
                     $need = (int)$role->required_spots - (int)$occupied;
                     if ($need <= 0) continue;
 
-                    $candidates = $workersByRoleType[$role->role_type_id] ?? [];
+                    $roleTypeId = (int)$role->role_type_id;
+                    $candidates = $workersByRoleType[$roleTypeId] ?? [];
                     if (empty($candidates)) continue;
 
-                    // deterministic order
                     sort($candidates);
 
                     foreach ($candidates as $workerId) {
@@ -129,18 +103,18 @@ class TodayReservationsSeeder extends Seeder
 
                         DB::table('workers_reservations')->updateOrInsert(
                             [
-                                'event_id' => $eventId,
-                                'work_role_id' => $role->role_id,
-                                'worker_id' => $workerId,
+                                'event_id'     => $eventId,
+                                'work_role_id' => (int)$role->role_id,
+                                'worker_id'    => (int)$workerId,
                             ],
                             [
-                                'reserved_at' => $now,
-                                'status' => $STATUS_RESERVED,
-                                'check_in_time' => null,
+                                'reserved_at'    => $now,
+                                'status'         => $STATUS_RESERVED,
+                                'check_in_time'  => null,
                                 'check_out_time' => null,
                                 'credited_hours' => null,
-                                'created_at' => $now,
-                                'updated_at' => $now,
+                                'created_at'     => $now,
+                                'updated_at'     => $now,
                             ]
                         );
 
@@ -150,7 +124,7 @@ class TodayReservationsSeeder extends Seeder
                 }
 
                 // -----------------------------
-                // 4.B) Ensure exactly 2 PENDING + 2 REJECTED per event (top-up)
+                // 3.B) Ensure exactly 2 PENDING + 2 REJECTED per event (top-up)
                 // -----------------------------
                 $pendingCount = DB::table('workers_reservations')
                     ->where('event_id', $eventId)
@@ -167,9 +141,8 @@ class TodayReservationsSeeder extends Seeder
 
                 if ($pendingNeed === 0 && $rejectedNeed === 0) continue;
 
-                // attach pending/rejected to the "main" role (largest required_spots)
                 $mainRole = $roles->first();
-                $mainRoleId = (int)$mainRole->role_id;
+                $mainRoleId   = (int)$mainRole->role_id;
                 $mainRoleType = (int)$mainRole->role_type_id;
 
                 // prefer same role_type candidates first
@@ -177,7 +150,6 @@ class TodayReservationsSeeder extends Seeder
                     $workersByRoleType[$mainRoleType] ?? [],
                     fn($wid) => !isset($used[(int)$wid])
                 ));
-
                 sort($extraCandidates);
 
                 // if not enough, take any active workers not used
@@ -193,8 +165,7 @@ class TodayReservationsSeeder extends Seeder
                 $needTotal = $pendingNeed + $rejectedNeed;
                 $picked = array_slice($extraCandidates, 0, $needTotal);
 
-                // insert pending first, then rejected
-                $pendingWorkers = array_slice($picked, 0, $pendingNeed);
+                $pendingWorkers  = array_slice($picked, 0, $pendingNeed);
                 $rejectedWorkers = array_slice($picked, $pendingNeed, $rejectedNeed);
 
                 foreach ($pendingWorkers as $workerId) {
@@ -202,18 +173,18 @@ class TodayReservationsSeeder extends Seeder
 
                     DB::table('workers_reservations')->updateOrInsert(
                         [
-                            'event_id' => $eventId,
+                            'event_id'     => $eventId,
                             'work_role_id' => $mainRoleId,
-                            'worker_id' => $workerId,
+                            'worker_id'    => $workerId,
                         ],
                         [
-                            'reserved_at' => $now,
-                            'status' => $STATUS_PENDING,
-                            'check_in_time' => null,
+                            'reserved_at'    => $now,
+                            'status'         => $STATUS_PENDING,
+                            'check_in_time'  => null,
                             'check_out_time' => null,
                             'credited_hours' => null,
-                            'created_at' => $now,
-                            'updated_at' => $now,
+                            'created_at'     => $now,
+                            'updated_at'     => $now,
                         ]
                     );
 
@@ -225,18 +196,18 @@ class TodayReservationsSeeder extends Seeder
 
                     DB::table('workers_reservations')->updateOrInsert(
                         [
-                            'event_id' => $eventId,
+                            'event_id'     => $eventId,
                             'work_role_id' => $mainRoleId,
-                            'worker_id' => $workerId,
+                            'worker_id'    => $workerId,
                         ],
                         [
-                            'reserved_at' => $now,
-                            'status' => $STATUS_REJECTED,
-                            'check_in_time' => null,
+                            'reserved_at'    => $now,
+                            'status'         => $STATUS_REJECTED,
+                            'check_in_time'  => null,
                             'check_out_time' => null,
                             'credited_hours' => null,
-                            'created_at' => $now,
-                            'updated_at' => $now,
+                            'created_at'     => $now,
+                            'updated_at'     => $now,
                         ]
                     );
 
