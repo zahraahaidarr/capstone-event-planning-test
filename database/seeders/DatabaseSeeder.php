@@ -22,7 +22,6 @@ class DatabaseSeeder extends Seeder
             VenueSeeder::class,
             SeedEventsAndWorkRolesSeeder::class,
             TodayReservationsSeeder::class,
-            PostEventSubmissionsSeeder::class,
             PostEventReportsSeeder::class,
             NotificationsSeeder::class,
             BackfillUserNamesSeeder::class,
