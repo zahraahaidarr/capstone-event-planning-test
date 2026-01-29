@@ -61,6 +61,10 @@ class WorkersUsersSeeder extends Seeder
                 $wp = $workersProfile[$idx];
                 $roleTypeId = (int)$roleTypeMap[$wp['role_type_name']];
 
+                // ✅ Default certificate path (NOT NULL safe for Postgres)
+                // Put any string that matches your app convention.
+                $defaultCertificatePath = 'certificates/default.pdf';
+
                 // ✅ Create or get user by email (idempotent)
                 $userRow = DB::table('users')->where('email', $u['email'])->first();
 
@@ -87,14 +91,17 @@ class WorkersUsersSeeder extends Seeder
                 // ✅ Ensure worker profile exists (idempotent)
                 $existingWorker = DB::table('workers')->where('user_id', $userId)->first();
                 if ($existingWorker) {
-                    // Optional: keep it updated
                     DB::table('workers')->where('user_id', $userId)->update([
-                        'role_type_id'    => $roleTypeId,
-                        'engagement_kind' => $wp['engagement_kind'],
-                        'is_volunteer'    => $wp['is_volunteer'],
-                        'location'        => $wp['location'],
-                        'hourly_rate'     => $wp['hourly_rate'],
-                        'updated_at'      => $now,
+                        'role_type_id'        => $roleTypeId,
+                        'engagement_kind'     => $wp['engagement_kind'],
+                        'is_volunteer'        => $wp['is_volunteer'],
+                        'location'            => $wp['location'],
+                        'hourly_rate'         => $wp['hourly_rate'],
+
+                        // ✅ keep it NOT NULL (if old row has null, we fix it)
+                        'certificate_path'    => $existingWorker->certificate_path ?: $defaultCertificatePath,
+
+                        'updated_at'          => $now,
                     ]);
                     continue;
                 }
@@ -105,7 +112,9 @@ class WorkersUsersSeeder extends Seeder
                     'engagement_kind'     => $wp['engagement_kind'],
                     'is_volunteer'        => $wp['is_volunteer'],
                     'location'            => $wp['location'],
-                    'certificate_path'    => null,
+
+                    // ✅ FIX: must not be null (Postgres NOT NULL constraint)
+                    'certificate_path'    => $defaultCertificatePath,
 
                     'total_hours'         => 0,
                     'verification_status' => 'PENDING',
@@ -113,7 +122,6 @@ class WorkersUsersSeeder extends Seeder
                     'approved_by'         => null,
                     'approved_at'         => null,
                     'joined_at'           => Carbon::now()->toDateString(),
-
                     'created_at'          => $now,
                     'updated_at'          => $now,
                 ]);
