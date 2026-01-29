@@ -9,21 +9,18 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('employee_posts', function (Blueprint $table) {
-            $table->unsignedBigInteger('category_id')
-                  ->nullable()
-                  ->after('employee_user_id');
+            $table->unsignedBigInteger('category_id')->nullable();
+
         });
 
         Schema::table('employee_reels', function (Blueprint $table) {
-            $table->unsignedBigInteger('category_id')
-                  ->nullable()
-                  ->after('employee_user_id');
+            $table->unsignedBigInteger('category_id')->nullable();
+
         });
 
         Schema::table('employee_stories', function (Blueprint $table) {
-            $table->unsignedBigInteger('category_id')
-                  ->nullable()
-                  ->after('employee_user_id');
+            $table->unsignedBigInteger('category_id')->nullable();
+
         });
     }
 
